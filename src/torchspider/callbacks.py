@@ -33,7 +33,83 @@ class TestFreezing(Callback):
                 break
 
 
+class SaveModel(Callback):
+    '''
+    Save model (1) after each epoch, (2) after the best validation loss
+    Make sure this callback is the last one in the list of callbacks
+    '''
+
+    def __init__(self, path=None, model_name=None):
+        if not path or not model_name:
+            raise ValueError(
+                "you want to save but path or model name is None")
+        store_attr('path, model_name', self)
+
+    def after_validate(self):
+        if self.learner.is_updated_best_valid_loss:
+            torch.save(self.model.state_dict(),
+                       f"{self.path}/{self.model_name}_best_valid.pth")
+
+    def after_epoch(self):
+        if self.epoch > 1:  # don't save the first epoch to save memory
+            torch.save(self.model.state_dict(),
+                       f"{self.path}/{self.model_name}_epoch{self.epoch}.pth")
+
+
 class TrackLoss(Callback):
+    '''
+    We always track epoch train loss, but we validate periodically during the epoch, so the
+    valid loss is named current_valid_loss.
+    '''
+
+    def __init__(self):
+        # store the loss for every step / batch
+        self.train_losses = []
+        self.valid_losses = []
+        self.best_valid_loss = float("inf")
+
+    def before_epoch(self):
+        self.epoch_train_loss = []
+
+    def after_train_loss(self):
+        self.epoch_train_loss.append(float(self.loss))
+
+    def before_validate(self):
+        self.current_valid_loss = []
+
+    def after_valid_loss(self):
+        self.current_valid_loss.append(float(self.loss))
+
+    def after_validate(self):
+        self.valid_losses += self.current_valid_loss
+        self.learner.is_updated_best_valid_loss = self.update_best_valid_loss_maybe(
+            np.mean(self.current_valid_loss))
+
+    def after_epoch(self):
+        self.train_losses += self.epoch_train_loss
+        self.log_current_loss()
+
+    def log_current_loss(self):
+        if self.train_losses and self.valid_losses:
+            print("*" * 90)
+            print(f"epoch {self.epoch} done | epoch train loss: {np.mean(self.epoch_train_loss)} | current valid loss: {np.mean(self.current_valid_loss)}")
+            print("*" * 90)
+            print()
+        else:
+            tqdm.write("Warning: one of the losses is None")
+
+    def update_best_valid_loss_maybe(self, cur_model_val_loss):
+        # update best valid loss if applicable
+        if cur_model_val_loss < self.best_valid_loss:
+            self.best_valid_loss = self.cur_model_val_loss
+            tqdm.write(
+                f">>>>> best valid loss updated: {self.best_valid_loss}\r")
+            return True
+        return False
+
+
+# TODO: Refactor out the repetition with TrackLoss, maybe inherit from it
+class Wandb(Callback):
     '''
     We always track epoch train loss, but we validate periodically during the epoch, so the 
     valid loss is named current_valid_loss. 
@@ -48,6 +124,13 @@ class TrackLoss(Callback):
         self.train_losses = []
         self.valid_losses = []
         self.best_valid_loss = float("inf")
+
+    def before_fit(self):
+        self.wandb_run = wandb.init(project="hello",
+                                    config={
+                                        "learning_rate": self.lr
+                                    })
+        wandb.watch(self.model)  # track gradients
 
     def before_epoch(self):
         self.epoch_train_loss = []
@@ -80,8 +163,13 @@ class TrackLoss(Callback):
         self.train_losses += self.epoch_train_loss
 
         if self.train_losses and self.valid_losses:
+            epoch_train_loss = np.mean(self.epoch_train_loss)
+            cur_valid_loss = np.mean(self.current_valid_loss)
+            wandb.log({"epoch_train_loss": epoch_train_loss,
+                       "cur_valid_loss": cur_valid_loss})
             print("*" * 90)
-            print(f"epoch {self.epoch} done | epoch train loss: {np.mean(self.epoch_train_loss)} | current valid loss: {np.mean(self.current_valid_loss)}")
+            print(
+                f"epoch {self.epoch} done | epoch train loss: {epoch_train_loss} | current valid loss: {cur_valid_loss}")
             print("*" * 90)
             print()
         else:
@@ -90,6 +178,9 @@ class TrackLoss(Callback):
             if self.epoch > 1:  # don't save the first epoch to save memory
                 torch.save(self.model.state_dict(),
                            f"{self.path}/{self.model_name}_epoch{self.epoch}.pth")
+
+    def after_fit(self):
+        self.wandb_run.finish()
 
 
 class CudaCallback(Callback):
