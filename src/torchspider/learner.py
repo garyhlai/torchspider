@@ -5,6 +5,25 @@ from fastai.basics import store_attr, noop
 import dill
 from .utils import find_incremental_filename
 
+"""
+Order of lifecycle:
+
+- before_fit
+    - before_epoch
+            - before_train_batch
+                - before_train_loss
+                - after_train_loss
+            - after_train_batch
+        - before_validate (interval)
+            - before_valid_batch
+                - before_valid_loss
+                - after_valid_loss
+            - after_valid_batch
+        - after_validate (interval)
+    - after_epoch
+- after_fit
+"""
+
 
 class Learner:
     def __init__(self, model, dls, loss_func, optimizer, lr, valid_interval=2, cbs=[], get_pred=None, save_learner=True):
@@ -32,7 +51,12 @@ class Learner:
             self.save(".")
 
     def validate_interval(self):
-        self.validate_model()
+        self('before_validate')
+        self.model.eval()
+        for batch_x, batch_y in self.dls.valid_dl:
+            self.batch_x, self.batch_y = batch_x, batch_y
+            self.validate_batch()
+        self('after_validate')
         self.model.train()
 
     def train_batch(self):
@@ -52,14 +76,6 @@ class Learner:
         self.optimizer.zero_grad()
         self('after_train_batch')
 
-    def validate_model(self):
-        self('before_validate')
-        self.model.eval()
-        for batch_x, batch_y in self.dls.valid_dl:
-            self.batch_x, self.batch_y = batch_x, batch_y
-            self.validate_batch()
-        self('after_validate')
-
     def validate_batch(self):
         self('before_valid_batch')
         # forward
@@ -69,8 +85,10 @@ class Learner:
             else:
                 self.out = self.model(self.batch_x)
                 self.pred = self.get_pred(self.out)
+            self('before_valid_loss')
             self.loss = self.loss_func(self.pred, self.batch_y)
-        self('after_valid_loss')
+            self('after_valid_loss')
+        self('after_valid_batch')
 
     def __call__(self, name):
         for cb in self.cbs:
