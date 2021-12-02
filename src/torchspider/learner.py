@@ -4,6 +4,9 @@ from torch.cuda import amp
 from fastai.basics import store_attr, noop
 import dill
 from .utils import find_incremental_filename
+from transformers import AdamW
+from .callbacks import ProgressBar
+
 
 """
 Order of lifecycle:
@@ -26,12 +29,40 @@ Order of lifecycle:
 
 
 class Learner:
-    def __init__(self, model, dls, loss_func, optimizer, lr, valid_interval=2, cbs=[], get_pred=None, save_learner=True):
+    def __init__(self, model, dls, config, valid_interval=None, cbs=[], get_pred=None, save_learner=True):
         store_attr(
-            'model, dls, loss_func, optimizer, lr, valid_interval, cbs, get_pred, save_learner', self)
-        for cb in cbs:
+            'model, dls, config, valid_interval, cbs, get_pred, save_learner', self)
+        self.lr = config.lr
+        self.optimizer = self.get_optimizer(config.optimizer)
+        self.loss_func = self.get_loss_func(config.loss_func)
+
+        if valid_interval is None:
+            self.valid_interval = len(dls.train_dl)
+
+        self.cbs = [ProgressBar()] + self.cbs
+        for cb in self.cbs:
             cb.learner = self
         self.cb_dict = {type(cb).__name__: cb for cb in self.cbs}
+
+    def get_loss_func(self, loss_func):
+        if loss_func == 'cross_entropy_loss':
+            return torch.nn.CrossEntropyLoss()
+        elif loss_func == 'mse':
+            return torch.nn.MSELoss()
+        elif loss_func == 'bce':
+            return torch.nn.BCELoss()
+        else:
+            raise ValueError(f"loss_func {loss_func} not supported")
+
+    def get_optimizer(self, optimizer: str):
+        if optimizer == 'adamw':
+            return AdamW(self.model.parameters(), lr=self.lr)
+        elif optimizer == 'adam':
+            return torch.optim.Adam(self.model.parameters(), lr=self.lr)
+        elif optimizer == 'sgd':
+            return torch.optim.SGD(self.model.parameters(), lr=self.lr)
+        else:
+            raise ValueError(f"optimizer {optimizer} not supported")
 
     def fit(self, epochs):
         self.epochs = epochs
@@ -47,8 +78,6 @@ class Learner:
                     self.validate_interval()
             self('after_epoch')
         self('after_fit')
-        if self.save_learner:
-            self.save(".")
 
     def validate_interval(self):
         self('before_validate')
@@ -109,6 +138,7 @@ class Learner:
             print("save successful!")
 
 
+# TODO: update MixedPrecisionCallback to match the updated Learner above
 class MixedPrecisionLearner(Learner):
     def fit(self, epochs):
         self.epochs = epochs
