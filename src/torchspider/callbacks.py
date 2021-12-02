@@ -56,7 +56,7 @@ class SaveModel(Callback):
 class TrackLoss(Callback):
     '''
     We always track epoch train loss, but we validate periodically during the epoch, so the
-    valid loss is named current_valid_loss as opposed to epoch_valid_loss.
+    valid loss is named interval_valid_loss as opposed to epoch_valid_loss.
     '''
 
     def __init__(self):
@@ -72,15 +72,15 @@ class TrackLoss(Callback):
         self.epoch_train_loss.append(float(self.loss))
 
     def before_validate(self):
-        self.current_valid_loss = []
+        self.interval_valid_loss = []
 
     def after_valid_loss(self):
-        self.current_valid_loss.append(float(self.loss))
+        self.interval_valid_loss.append(float(self.loss))
 
     def after_validate(self):
-        self.valid_losses += self.current_valid_loss
+        self.valid_losses += self.interval_valid_loss
         self.learner.is_updated_best_valid_loss = self.update_best_valid_loss_maybe(
-            np.mean(self.current_valid_loss))
+            np.mean(self.interval_valid_loss))
 
     def after_epoch(self):
         self.train_losses += self.epoch_train_loss
@@ -89,7 +89,7 @@ class TrackLoss(Callback):
     def log_current_loss(self):
         if self.train_losses and self.valid_losses:
             print("*" * 90)
-            print(f"epoch {self.epoch} done | epoch train loss: {np.mean(self.epoch_train_loss)} | current valid loss: {np.mean(self.current_valid_loss)}")
+            print(f"epoch {self.epoch} done | avg epoch train loss: {np.mean(self.epoch_train_loss)} | avg current valid loss: {np.mean(self.interval_valid_loss)}")
             print("*" * 90)
             print()
         else:
@@ -105,78 +105,45 @@ class TrackLoss(Callback):
         return False
 
 
-# TODO: Refactor out the repetition with TrackLoss, maybe inherit from it
-class Wandb(Callback):
-    '''
-    We always track epoch train loss, but we validate periodically during the epoch, so the 
-    valid loss is named current_valid_loss. 
-    '''
+class WandbTrackAndSave(TrackLoss):
+    """
+    Example: 
+        ```
+        WandbTrackAndSave("hello", {"learning_rate": self.lr})
+        ```
+    """
 
-    def __init__(self, save_model=False, path=None, model_name=None):
-        if save_model:
-            if not path or not model_name:
-                raise ValueError(
-                    "you want to save but path or model name is None")
-        store_attr('save_model, path, model_name', self)
-        self.train_losses = []
-        self.valid_losses = []
-        self.best_valid_loss = float("inf")
+    def __init__(self, project, config, path, model_name):
+        super().__init__()
+        store_attr('project, config, path, model_name', self)
+        self.best_valid_path = f"{self.path}/{self.model_name}_best_valid.pth"
 
     def before_fit(self):
-        self.wandb_run = wandb.init(project="hello",
-                                    config={
-                                        "learning_rate": self.lr
-                                    })
+        self.wandb_run = wandb.init(project=self.project,
+                                    config=self.config)
         wandb.watch(self.model)  # track gradients
 
-    def before_epoch(self):
-        self.epoch_train_loss = []
-
     def after_train_loss(self):
-        self.epoch_train_loss.append(float(self.loss))
-
-    def before_validate(self):
-        self.current_valid_loss = []
+        step_train_loss = float(self.loss)
+        self.epoch_train_loss.append(step_train_loss)
+        wandb.log({"train_loss": step_train_loss})
 
     def after_valid_loss(self):
-        self.current_valid_loss.append(float(self.loss))
+        step_valid_loss = float(self.loss)
+        self.interval_valid_loss.append(step_valid_loss)
+        wandb.log({"valid_loss": step_valid_loss})
 
     def after_validate(self):
-        # valid_losses store the loss for every step / batch
-        self.valid_losses += self.current_valid_loss
-        # to evaluate the model, we average all the batches in valid_ds
-        self.cur_model_val_loss = np.mean(self.current_valid_loss)
-        if self.cur_model_val_loss < self.best_valid_loss:
-            self.best_valid_loss = self.cur_model_val_loss
-            tqdm.write(
-                f">>>>> best valid loss updated: {self.best_valid_loss}\r")
-            if self.save_model:
-                torch.save(self.model.state_dict(),
-                           f"{self.path}/{self.model_name}_best_valid.pth")
-            else:
-                tqdm.write("!!! Warning: model is not saving \r")
-
-    def after_epoch(self):
-        self.train_losses += self.epoch_train_loss
-
-        if self.train_losses and self.valid_losses:
-            epoch_train_loss = np.mean(self.epoch_train_loss)
-            cur_valid_loss = np.mean(self.current_valid_loss)
-            wandb.log({"epoch_train_loss": epoch_train_loss,
-                       "cur_valid_loss": cur_valid_loss})
-            print("*" * 90)
-            print(
-                f"epoch {self.epoch} done | epoch train loss: {epoch_train_loss} | current valid loss: {cur_valid_loss}")
-            print("*" * 90)
-            print()
-        else:
-            tqdm.write("Warning: one of the losses is None")
-        if self.save_model:
-            if self.epoch > 1:  # don't save the first epoch to save memory
-                torch.save(self.model.state_dict(),
-                           f"{self.path}/{self.model_name}_epoch{self.epoch}.pth")
+        super().after_validate()
+        if self.learner.is_updated_best_valid_loss:
+            torch.save(self.model.state_dict(),
+                       self.best_valid_path)
 
     def after_fit(self):
+        save_learner_path = "."
+        if self.save_learner:
+            self.save(save_learner_path)
+            wandb.save(f"{save_learner_path}/learner.pkl")
         self.wandb_run.finish()
 
 
