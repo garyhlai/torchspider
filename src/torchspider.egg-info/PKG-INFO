@@ -1,0 +1,17 @@
+Metadata-Version: 2.1
+Name: torchspider
+Version: 0.0.7
+Summary: A Pytorch-based framework
+Home-page: https://github.com/ghlai9665/octopus
+Author: Gary Lai
+Author-email: glai9665@gmail.com
+License: Apache v2.0
+Platform: UNKNOWN
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Programming Language :: Python :: 3
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+License-File: LICENSE
+
+torchspider is a machine learning framework
+

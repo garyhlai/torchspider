@@ -1,0 +1,17 @@
+LICENSE
+MANIFEST.in
+README.md
+pyproject.toml
+requirements.txt
+setup.py
+src/torchspider/__init__.py
+src/torchspider/callbacks.py
+src/torchspider/data.py
+src/torchspider/learner.py
+src/torchspider/torch_tools.py
+src/torchspider/utils.py
+src/torchspider.egg-info/PKG-INFO
+src/torchspider.egg-info/SOURCES.txt
+src/torchspider.egg-info/dependency_links.txt
+src/torchspider.egg-info/requires.txt
+src/torchspider.egg-info/top_level.txt
