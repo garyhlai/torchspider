@@ -39,10 +39,7 @@ class SaveModel(Callback):
     Make sure this callback is the last one in the list of callbacks
     '''
 
-    def __init__(self, path=None, model_name=None):
-        if not path or not model_name:
-            raise ValueError(
-                "you want to save but path or model name is None")
+    def __init__(self, path, model_name):
         store_attr('path, model_name', self)
 
     def after_validate(self):
@@ -59,7 +56,7 @@ class SaveModel(Callback):
 class TrackLoss(Callback):
     '''
     We always track epoch train loss, but we validate periodically during the epoch, so the
-    valid loss is named current_valid_loss.
+    valid loss is named current_valid_loss as opposed to epoch_valid_loss.
     '''
 
     def __init__(self):
@@ -101,7 +98,7 @@ class TrackLoss(Callback):
     def update_best_valid_loss_maybe(self, cur_model_val_loss):
         # update best valid loss if applicable
         if cur_model_val_loss < self.best_valid_loss:
-            self.best_valid_loss = self.cur_model_val_loss
+            self.best_valid_loss = cur_model_val_loss
             tqdm.write(
                 f">>>>> best valid loss updated: {self.best_valid_loss}\r")
             return True
