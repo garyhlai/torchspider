@@ -46,7 +46,9 @@ class Learner:
 
     def get_loss_func(self, loss_func):
         if loss_func == 'cross_entropy_loss':
-            return torch.nn.CrossEntropyLoss()
+            return torch.nn.functional.cross_entropy
+        elif loss_func == 'binary_cross_entropy_with_logits':
+            return torch.nn.functional.binary_cross_entropy_with_logits
         elif loss_func == 'mse':
             return torch.nn.MSELoss()
         elif loss_func == 'bce':
