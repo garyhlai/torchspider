@@ -66,27 +66,44 @@ class Learner:
         else:
             raise ValueError(f"optimizer {optimizer} not supported")
 
+    def get_batch_x_y(self, batch):
+        # support huggingface dict
+        if isinstance(batch, dict):
+            batch_y = batch['label']
+            del batch['label']
+            batch_x = batch
+        else:
+            batch_x, batch_y = batch
+        return batch_x, batch_y
+
     def fit(self, epochs):
         self.epochs = epochs
         self('before_fit')
         for epoch in range(1, epochs+1):
+
             self.epoch = epoch
             self('before_epoch')
             self.model.train()
             for i, batch in enumerate(self.dls.train_dl):
-                self.batch_x, self.batch_y = batch
+                self.batch_x, self.batch_y = self.get_batch_x_y(batch)
                 self.train_batch()
                 if i % self.valid_interval == 0:
                     self.validate_interval()
+
             self('after_epoch')
         self('after_fit')
 
     def validate_interval(self):
         self('before_validate')
         self.model.eval()
-        for batch_x, batch_y in self.dls.valid_dl:
-            self.batch_x, self.batch_y = batch_x, batch_y
+        self.correct_count = 0
+
+        for batch in self.dls.valid_dl:
+            self.batch_x, self.batch_y = self.get_batch_x_y(batch)
             self.validate_batch()
+
+        self.acc = self.correct_count / len(self.dls.valid_dl.dataset)
+
         self('after_validate')
         self.model.train()
 
@@ -118,6 +135,12 @@ class Learner:
                 self.pred = self.get_pred(self.out)
             self('before_valid_loss')
             self.loss = self.loss_func(self.pred, self.batch_y)
+
+            # get accuracy
+            self.pred = torch.argmax(self.pred, 1)
+            self.correct_count += self.pred.eq(self.batch_y).sum(
+            ).item()
+
             self('after_valid_loss')
         self('after_valid_batch')
 

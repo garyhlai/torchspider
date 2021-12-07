@@ -89,7 +89,7 @@ class TrackLoss(Callback):
     def log_current_loss(self):
         if self.train_losses and self.valid_losses:
             print("*" * 90)
-            print(f"epoch {self.epoch} done | avg epoch train loss: {np.mean(self.epoch_train_loss)} | avg current valid loss: {np.mean(self.interval_valid_loss)}")
+            print(f"epoch {self.epoch} done | avg epoch train loss: {np.mean(self.epoch_train_loss)} | avg current valid loss: {np.mean(self.interval_valid_loss)} | acc: {self.learner.acc}")
             print("*" * 90)
             print()
         else:
