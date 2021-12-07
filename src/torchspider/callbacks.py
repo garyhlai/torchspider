@@ -73,14 +73,22 @@ class TrackLoss(Callback):
 
     def before_validate(self):
         self.interval_valid_loss = []
+        self.correct_count = 0
 
     def after_valid_loss(self):
         self.interval_valid_loss.append(float(self.loss))
+        # get batch correct count
+        pred = torch.argmax(self.learner.pred, 1)
+        self.correct_count += pred.eq(self.batch_y).sum(
+        ).item()
 
     def after_validate(self):
+        # update valid loss
         self.valid_losses += self.interval_valid_loss
         self.learner.is_updated_best_valid_loss = self.update_best_valid_loss_maybe(
             np.mean(self.interval_valid_loss))
+        # update accuracy
+        self.acc = self.correct_count / len(self.dls.valid_dl.dataset)
 
     def after_epoch(self):
         self.train_losses += self.epoch_train_loss
@@ -89,7 +97,7 @@ class TrackLoss(Callback):
     def log_current_loss(self):
         if self.train_losses and self.valid_losses:
             print("*" * 90)
-            print(f"epoch {self.epoch} done | avg epoch train loss: {np.mean(self.epoch_train_loss)} | avg current valid loss: {np.mean(self.interval_valid_loss)} | acc: {self.learner.acc}")
+            print(f"epoch {self.epoch} done | avg epoch train loss: {np.mean(self.epoch_train_loss)} | avg current valid loss: {np.mean(self.interval_valid_loss)} | acc: {self.acc}")
             print("*" * 90)
             print()
         else:

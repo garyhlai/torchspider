@@ -96,13 +96,10 @@ class Learner:
     def validate_interval(self):
         self('before_validate')
         self.model.eval()
-        self.correct_count = 0
 
         for batch in self.dls.valid_dl:
             self.batch_x, self.batch_y = self.get_batch_x_y(batch)
             self.validate_batch()
-
-        self.acc = self.correct_count / len(self.dls.valid_dl.dataset)
 
         self('after_validate')
         self.model.train()
@@ -135,12 +132,6 @@ class Learner:
                 self.pred = self.get_pred(self.out)
             self('before_valid_loss')
             self.loss = self.loss_func(self.pred, self.batch_y)
-
-            # get accuracy
-            self.pred = torch.argmax(self.pred, 1)
-            self.correct_count += self.pred.eq(self.batch_y).sum(
-            ).item()
-
             self('after_valid_loss')
         self('after_valid_batch')
 
