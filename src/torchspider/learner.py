@@ -29,7 +29,7 @@ Order of lifecycle:
 
 
 class Learner:
-    def __init__(self, model, dls, config, valid_interval=None, cbs=[], get_pred=None, save_learner=True):
+    def __init__(self, model, dls, config, valid_interval=None, cbs=None, get_pred=None, save_learner=True):
         store_attr(
             'model, dls, config, valid_interval, cbs, get_pred, save_learner', self)
         self.lr = config.lr
@@ -39,6 +39,8 @@ class Learner:
         if valid_interval is None:
             self.valid_interval = len(dls.train_dl)
 
+        if cbs is None:
+            cbs = []
         self.cbs = [ProgressBar()] + self.cbs
         for cb in self.cbs:
             cb.learner = self
