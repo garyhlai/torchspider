@@ -40,6 +40,8 @@ class Learner:
         if valid_interval is None:
             self.valid_interval = len(dls.train_dl)
 
+        self.export = {"dls": dls}
+
         if cbs is None:
             cbs = []
         self.cbs = [ProgressBar()] + self.cbs
@@ -70,8 +72,6 @@ class Learner:
             raise ValueError(f"optimizer {optimizer} not supported")
 
     def get_batch_x_y(self, batch):
-        # print("batch is type: ", type(batch))
-        # print("batch: ", batch)
         # support huggingface dict
         if isinstance(batch, dict):
             batch_y = batch['label']
@@ -152,14 +152,13 @@ class Learner:
         """
         Save callback dict to `path`
         """
-        export = {}
         for cb_name, cb in self.cb_dict.items():
             # export everything except for reference to learner
-            export[cb_name] = {key: value for key,
-                               value in cb.__dict__.items() if key != 'learner'}
+            self.export[cb_name] = {key: value for key,
+                                    value in cb.__dict__.items() if key != 'learner'}
         # save
         with open("learner.pkl", 'wb') as learner_file:
-            dill.dump(export, learner_file)
+            dill.dump(self.export, learner_file)
             print("save successful!")
 
 

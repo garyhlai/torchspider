@@ -60,8 +60,9 @@ class TrackLoss(Callback):
     valid loss is named interval_valid_loss as opposed to epoch_valid_loss.
     '''
 
-    def __init__(self):
+    def __init__(self, path="."):
         # store the loss for every step / batch
+        self.path = path
         self.train_losses = []
         self.valid_losses = []
         self.best_valid_loss = float("inf")
@@ -112,6 +113,10 @@ class TrackLoss(Callback):
                 f">>>>> best valid loss updated: {self.best_valid_loss}\r")
             return True
         return False
+
+    def after_fit(self):
+        if self.save_learner:
+            self.save(self.path)
 
 
 class WandbTrackAndSave(TrackLoss):
