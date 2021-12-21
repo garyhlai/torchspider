@@ -5,6 +5,7 @@ from fastai.basics import store_attr, noop
 import dill
 from .utils import find_incremental_filename
 from transformers import AdamW
+from transformers.tokenization_utils_base import BatchEncoding
 from .callbacks import ProgressBar
 
 
@@ -69,10 +70,16 @@ class Learner:
             raise ValueError(f"optimizer {optimizer} not supported")
 
     def get_batch_x_y(self, batch):
+        # print("batch is type: ", type(batch))
+        # print("batch: ", batch)
         # support huggingface dict
         if isinstance(batch, dict):
             batch_y = batch['label']
             del batch['label']
+            batch_x = batch
+        elif isinstance(batch, BatchEncoding):
+            batch_y = batch['labels']
+            del batch['labels']
             batch_x = batch
         else:
             batch_x, batch_y = batch

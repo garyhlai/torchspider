@@ -5,6 +5,7 @@ from fastai.basics import GetAttr, store_attr
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import wandb
+import logging
 
 
 class Callback(GetAttr):
@@ -123,7 +124,7 @@ class WandbTrackAndSave(TrackLoss):
 
     def __init__(self, project, config, path, model_name):
         super().__init__()
-        store_attr('project, config, path, model_name', self)
+        store_attr("project, config, path, model_name", self)
         self.best_valid_path = f"{self.path}/{self.model_name}_best_valid.pth"
 
     def before_fit(self):
@@ -140,33 +141,43 @@ class WandbTrackAndSave(TrackLoss):
         step_valid_loss = float(self.loss)
         self.interval_valid_loss.append(step_valid_loss)
         wandb.log({"valid_loss": step_valid_loss})
+        # get batch correct count (TODO: refactor & use `super().after_valid_loss`)
+        pred = torch.argmax(self.learner.pred, 1)
+        self.correct_count += pred.eq(self.batch_y).sum(
+        ).item()
 
     def after_validate(self):
         super().after_validate()
         if self.learner.is_updated_best_valid_loss:
             torch.save(self.model.state_dict(),
                        self.best_valid_path)
+        wandb.log({"accuracy": self.acc})
 
     def after_fit(self):
-        save_learner_path = "."
         if self.save_learner:
-            self.save(save_learner_path)
-            wandb.save(f"{save_learner_path}/learner.pkl")
+            self.save(self.path)
+            wandb.save(f"{self.path}/learner.pkl")
         self.wandb_run.finish()
+
+
+class Debugger(Callback):
+    def before_fit(self):
+        pass
 
 
 class CudaCallback(Callback):
     def __init__(self, device="cuda"):
         self.device = device
+        logging.warning(f"device is: {device}")
 
     def before_fit(self):
         self.model.to(self.device)
-        self.get_pred.to(self.device)
+        if self.get_pred:
+            self.get_pred.to(self.device)
 
     def before_batch(self):
-        self.learner.batch_x = ({k: v.to(self.device) for k, v in self.batch_x[0].items()},
-                                {k: v.to(self.device) for k, v in self.batch_x[1].items()})
-
+        self.learner.batch_x = {k: v.to(self.device)
+                                for k, v in self.batch_x.items()}
         self.learner.batch_y = self.batch_y.to(self.device)
 
     def before_train_batch(self):

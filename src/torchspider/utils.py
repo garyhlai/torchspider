@@ -20,3 +20,17 @@ def shuffle_df(df):
     shuffle a pandas dataframe
     """
     return df.sample(frac=1).reset_index(drop=True)
+
+
+def show_dl(dl, attr=("shape"), first_n=1):
+    counter = 0
+    for x in dl:
+        print("-"*20)
+        if "shape" in attr:
+            print({k: v.shape for k, v in x.items()})
+        if "all" in attr:
+            print(f"x: {x}")
+
+        counter += 1
+        if counter == first_n:
+            break
