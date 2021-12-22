@@ -6,6 +6,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import wandb
 import logging
+from dataclasses import asdict
 
 
 class Callback(GetAttr):
@@ -40,18 +41,15 @@ class SaveModel(Callback):
     Make sure this callback is the last one in the list of callbacks
     '''
 
-    def __init__(self, path, model_name):
-        store_attr('path, model_name', self)
-
     def after_validate(self):
         if self.learner.is_updated_best_valid_loss:
             torch.save(self.model.state_dict(),
-                       f"{self.path}/{self.model_name}_best_valid.pth")
+                       f"{self.learner.config.path}/{self.model_name}_best_valid.pth")
 
     def after_epoch(self):
         if self.epoch > 1:  # don't save the first epoch to save memory
             torch.save(self.model.state_dict(),
-                       f"{self.path}/{self.model_name}_epoch{self.epoch}.pth")
+                       f"{self.learner.config.path}/{self.model_name}_epoch{self.epoch}.pth")
 
 
 class TrackLoss(Callback):
@@ -60,9 +58,8 @@ class TrackLoss(Callback):
     valid loss is named interval_valid_loss as opposed to epoch_valid_loss.
     '''
 
-    def __init__(self, path="."):
+    def __init__(self):
         # store the loss for every step / batch
-        self.path = path
         self.train_losses = []
         self.valid_losses = []
         self.best_valid_loss = float("inf")
@@ -116,7 +113,7 @@ class TrackLoss(Callback):
 
     def after_fit(self):
         if self.save_learner:
-            self.save(self.path)
+            self.save()
 
 
 class WandbTrackAndSave(TrackLoss):
@@ -127,14 +124,14 @@ class WandbTrackAndSave(TrackLoss):
         ```
     """
 
-    def __init__(self, project, config, path, model_name):
+    def __init__(self, project, model_name):
         super().__init__()
-        store_attr("project, config, path, model_name", self)
-        self.best_valid_path = f"{self.path}/{self.model_name}_best_valid.pth"
+        store_attr("project, model_name", self)
 
     def before_fit(self):
+        self.best_valid_path = f"{self.learner.config.path}/{self.model_name}_best_valid.pth"
         self.wandb_run = wandb.init(project=self.project,
-                                    config=self.config)
+                                    config=asdict(self.learner.config))
         wandb.watch(self.model)  # track gradients
 
     def after_train_loss(self):
@@ -160,8 +157,9 @@ class WandbTrackAndSave(TrackLoss):
 
     def after_fit(self):
         if self.save_learner:
-            self.save(self.path)
-            wandb.save(f"{self.path}/learner.pkl")
+            self.save()
+            wandb.save(f"{self.learner.config.path}/learner.pkl")
+            wandb.save(f"{self.learner.config.path}/dls.pkl")
         self.wandb_run.finish()
 
 

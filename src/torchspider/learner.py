@@ -40,7 +40,10 @@ class Learner:
         if valid_interval is None:
             self.valid_interval = len(dls.train_dl)
 
-        self.export = {"dls": dls}
+        # save dls
+        with open(f"{self.config.path}/dls.pkl", 'wb') as dls_file:
+            dill.dump(dls, dls_file)
+            print("saved dls successfully!")
 
         if cbs is None:
             cbs = []
@@ -148,16 +151,17 @@ class Learner:
         for cb in self.cbs:
             getattr(cb, name, noop)()
 
-    def save(self, path):
+    def save(self):
         """
         Save callback dict to `path`
         """
+        self.export = {}
         for cb_name, cb in self.cb_dict.items():
             # export everything except for reference to learner
             self.export[cb_name] = {key: value for key,
                                     value in cb.__dict__.items() if key != 'learner'}
         # save
-        with open(f"{path}/learner.pkl", 'wb') as learner_file:
+        with open(f"{self.config.path}/learner.pkl", 'wb') as learner_file:
             dill.dump(self.export, learner_file)
             print("save successful!")
 
