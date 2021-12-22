@@ -157,7 +157,7 @@ class Learner:
             self.export[cb_name] = {key: value for key,
                                     value in cb.__dict__.items() if key != 'learner'}
         # save
-        with open("learner.pkl", 'wb') as learner_file:
+        with open(f"{path}/learner.pkl", 'wb') as learner_file:
             dill.dump(self.export, learner_file)
             print("save successful!")
 
