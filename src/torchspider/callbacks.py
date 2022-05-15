@@ -10,7 +10,7 @@ from dataclasses import asdict
 
 
 class Callback(GetAttr):
-    _default = 'learner'
+    _default = "learner"
 
 
 class TestFreezing(Callback):
@@ -36,27 +36,25 @@ class TestFreezing(Callback):
 
 
 class SaveModel(Callback):
-    '''
+    """
     Save model (1) after each epoch, (2) after the best validation loss
     Make sure this callback is the last one in the list of callbacks
-    '''
+    """
 
     def after_validate(self):
         if self.learner.is_updated_best_valid_loss:
-            torch.save(self.model.state_dict(),
-                       f"{self.learner.config.path}/{self.model_name}_best_valid.pth")
+            torch.save(self.model.state_dict(), f"{self.learner.config.path}/{self.model_name}_best_valid.pth")
 
     def after_epoch(self):
         if self.epoch > 1:  # don't save the first epoch to save memory
-            torch.save(self.model.state_dict(),
-                       f"{self.learner.config.path}/{self.model_name}_epoch{self.epoch}.pth")
+            torch.save(self.model.state_dict(), f"{self.learner.config.path}/{self.model_name}_epoch{self.epoch}.pth")
 
 
 class TrackLoss(Callback):
-    '''
+    """
     We always track epoch train loss, but we validate periodically during the epoch, so the
     valid loss is named interval_valid_loss as opposed to epoch_valid_loss.
-    '''
+    """
 
     def __init__(self):
         # store the loss for every step / batch
@@ -77,15 +75,17 @@ class TrackLoss(Callback):
     def after_valid_loss(self):
         self.interval_valid_loss.append(float(self.loss))
         # get batch correct count
-        pred = torch.argmax(self.learner.pred, 1)
-        self.correct_count += pred.eq(self.batch_y).sum(
-        ).item()
+        if self.learner.is_hf:
+            pred = torch.argmax(self.learner.out.logits, 1)
+            self.correct_count += pred.eq(self.batch["labels"]).sum().item()
+        else:
+            torch.argmax(self.learner.pred, 1)
+            self.correct_count += pred.eq(self.batch_y).sum().item()
 
     def after_validate(self):
         # update valid loss
         self.valid_losses += self.interval_valid_loss
-        self.learner.is_updated_best_valid_loss = self.update_best_valid_loss_maybe(
-            np.mean(self.interval_valid_loss))
+        self.learner.is_updated_best_valid_loss = self.update_best_valid_loss_maybe(np.mean(self.interval_valid_loss))
         # update accuracy
         self.acc = self.correct_count / len(self.dls.valid_dl.dataset)
 
@@ -96,7 +96,9 @@ class TrackLoss(Callback):
     def log_current_loss(self):
         if self.train_losses and self.valid_losses:
             print("*" * 90)
-            print(f"epoch {self.epoch} done | avg epoch train loss: {np.mean(self.epoch_train_loss)} | avg current valid loss: {np.mean(self.interval_valid_loss)} | acc: {self.acc}")
+            print(
+                f"epoch {self.epoch} done | avg epoch train loss: {np.mean(self.epoch_train_loss)} | avg current valid loss: {np.mean(self.interval_valid_loss)} | acc: {self.acc}"
+            )
             print("*" * 90)
             print()
         else:
@@ -106,8 +108,7 @@ class TrackLoss(Callback):
         # update best valid loss if applicable
         if cur_model_val_loss < self.best_valid_loss:
             self.best_valid_loss = cur_model_val_loss
-            tqdm.write(
-                f">>>>> best valid loss updated: {self.best_valid_loss}\r")
+            tqdm.write(f">>>>> best valid loss updated: {self.best_valid_loss}\r")
             return True
         return False
 
@@ -118,7 +119,7 @@ class TrackLoss(Callback):
 
 class WandbTrackAndSave(TrackLoss):
     """
-    Example: 
+    Example:
         ```
         WandbTrackAndSave("hello", {"learning_rate": self.lr})
         ```
@@ -130,8 +131,7 @@ class WandbTrackAndSave(TrackLoss):
 
     def before_fit(self):
         self.best_valid_path = f"{self.learner.config.path}/{self.model_name}_best_valid.pth"
-        self.wandb_run = wandb.init(project=self.project,
-                                    config=asdict(self.learner.config))
+        self.wandb_run = wandb.init(project=self.project, config=asdict(self.learner.config))
         wandb.watch(self.model)  # track gradients
 
     def after_train_loss(self):
@@ -144,15 +144,18 @@ class WandbTrackAndSave(TrackLoss):
         self.interval_valid_loss.append(step_valid_loss)
         wandb.log({"valid_loss": step_valid_loss})
         # get batch correct count (TODO: refactor & use `super().after_valid_loss`)
-        pred = torch.argmax(self.learner.pred, 1)
-        self.correct_count += pred.eq(self.batch_y).sum(
-        ).item()
+        # pred = torch.argmax(self.learner.pred, 1)
+        if self.learner.is_hf:
+            pred = torch.argmax(self.learner.out.logits, 1)
+            self.correct_count += pred.eq(self.batch["labels"]).sum().item()
+        else:
+            torch.argmax(self.learner.pred, 1)
+            self.correct_count += pred.eq(self.batch_y).sum().item()
 
     def after_validate(self):
         super().after_validate()
         if self.learner.is_updated_best_valid_loss:
-            torch.save(self.model.state_dict(),
-                       self.best_valid_path)
+            torch.save(self.model.state_dict(), self.best_valid_path)
         wandb.log({"accuracy": self.acc})
 
     def after_fit(self):
@@ -179,8 +182,7 @@ class CudaCallback(Callback):
             self.get_pred.to(self.device)
 
     def before_batch(self):
-        self.learner.batch_x = {k: v.to(self.device)
-                                for k, v in self.batch_x.items()}
+        self.learner.batch_x = {k: v.to(self.device) for k, v in self.batch_x.items()}
         self.learner.batch_y = self.batch_y.to(self.device)
 
     def before_train_batch(self):
@@ -196,14 +198,14 @@ class LrRecorder(Callback):
 
     def before_train_batch(self):
         for i, param_group in enumerate(self.learner.optimizer.param_groups):
-            self.lrs[i].append(param_group['lr'])
+            self.lrs[i].append(param_group["lr"])
 
     def plot_lrs(self):
         for i in range(len(self.lrs)):
             if i == 0:
-                label = 'tail group'
-            elif i == len(self.lrs)-1:
-                label = 'head group'
+                label = "tail group"
+            elif i == len(self.lrs) - 1:
+                label = "head group"
             else:
                 label = f"group {i-1}"
             plt.plot(self.lrs[i], label=label)
@@ -217,8 +219,9 @@ class Scheduler(Callback):
 
 class ProgressBar(Callback):
     def before_epoch(self):
-        self.learner.pbar = tqdm(total=len(
-            self.dls.train_dl), position=0, desc=f"epoch {self.epoch}", leave=True, file=sys.stdout)
+        self.learner.pbar = tqdm(
+            total=len(self.dls.train_dl), position=0, desc=f"epoch {self.epoch}", leave=True, file=sys.stdout
+        )
 
     def after_train_batch(self):
         self.learner.pbar.update(1)

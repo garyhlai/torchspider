@@ -31,8 +31,7 @@ Order of lifecycle:
 
 class Learner:
     def __init__(self, model, dls, config, valid_interval=None, cbs=None, get_pred=None, save_learner=True):
-        store_attr(
-            'model, dls, config, valid_interval, cbs, get_pred, save_learner', self)
+        store_attr("model, dls, config, valid_interval, cbs, get_pred, save_learner", self)
         self.lr = config.lr
         self.optimizer = self.get_optimizer(config.optimizer)
         self.loss_func = self.get_loss_func(config.loss_func)
@@ -40,8 +39,12 @@ class Learner:
         if valid_interval is None:
             self.valid_interval = len(dls.train_dl)
 
+        self.is_hf = self.is_hf_dataset()
+        if self.is_hf:
+            print("Using HF dataset, `Learner` behaves differently")
+
         # save dls
-        with open(f"{self.config.path}/dls.pkl", 'wb') as dls_file:
+        with open(f"{self.config.path}/dls.pkl", "wb") as dls_file:
             dill.dump(dls, dls_file)
             print("saved dls successfully!")
 
@@ -52,100 +55,105 @@ class Learner:
             cb.learner = self
         self.cb_dict = {type(cb).__name__: cb for cb in self.cbs}
 
+    def is_hf_dataset(self):
+        if "labels" in next(iter(self.dls.train_dl)):
+            return True
+        return False
+
     def get_loss_func(self, loss_func):
-        if loss_func == 'cross_entropy_loss':
+        if loss_func == "cross_entropy_loss":
             return torch.nn.functional.cross_entropy
-        elif loss_func == 'binary_cross_entropy_with_logits':
+        elif loss_func == "binary_cross_entropy_with_logits":
             return torch.nn.functional.binary_cross_entropy_with_logits
-        elif loss_func == 'mse':
+        elif loss_func == "mse":
             return torch.nn.MSELoss()
-        elif loss_func == 'bce':
+        elif loss_func == "bce":
             return torch.nn.BCELoss()
         else:
             raise ValueError(f"loss_func {loss_func} not supported")
 
     def get_optimizer(self, optimizer: str):
-        if optimizer == 'adamw':
+        if optimizer == "adamw":
             return AdamW(self.model.parameters(), lr=self.lr)
-        elif optimizer == 'adam':
+        elif optimizer == "adam":
             return torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        elif optimizer == 'sgd':
+        elif optimizer == "sgd":
             return torch.optim.SGD(self.model.parameters(), lr=self.lr)
         else:
             raise ValueError(f"optimizer {optimizer} not supported")
 
-    def get_batch_x_y(self, batch):
-        # support huggingface dict
-        if isinstance(batch, dict):
-            batch_y = batch['label']
-            del batch['label']
-            batch_x = batch
-        elif isinstance(batch, BatchEncoding):
-            batch_y = batch['labels']
-            del batch['labels']
-            batch_x = batch
-        else:
-            batch_x, batch_y = batch
-        return batch_x, batch_y
-
     def fit(self, epochs):
         self.epochs = epochs
-        self('before_fit')
-        for epoch in range(1, epochs+1):
-
+        self("before_fit")
+        for epoch in range(1, epochs + 1):
             self.epoch = epoch
-            self('before_epoch')
+            self("before_epoch")
             self.model.train()
             for i, batch in enumerate(self.dls.train_dl):
-                self.batch_x, self.batch_y = self.get_batch_x_y(batch)
-                self.train_batch()
+                self.train_batch(batch)
                 if i % self.valid_interval == 0:
                     self.validate_interval()
-
-            self('after_epoch')
-        self('after_fit')
+            self("after_epoch")
+        self("after_fit")
 
     def validate_interval(self):
-        self('before_validate')
+        self("before_validate")
         self.model.eval()
 
         for batch in self.dls.valid_dl:
-            self.batch_x, self.batch_y = self.get_batch_x_y(batch)
-            self.validate_batch()
+            self.validate_batch(batch)
 
-        self('after_validate')
+        self("after_validate")
         self.model.train()
 
-    def train_batch(self):
-        self('before_train_batch')
-        # forward
-        if self.get_pred == None:
-            self.pred = self.model(self.batch_x)
+    def train_batch(self, batch):
+        self("before_train_batch")
+        if self.is_hf:
+            self.batch = batch
+            self.out = self.model(**self.batch)
+            self("before_train_loss")
+            self.loss = self.out.loss
         else:
-            self.out = self.model(self.batch_x)
-            self.pred = self.get_pred(self.out)
-        self('before_train_loss')
-        self.loss = self.loss_func(self.pred, self.batch_y)
-        self('after_train_loss')
-        # backward
-        self.loss.backward()
-        self.optimizer.step()
-        self.optimizer.zero_grad()
-        self('after_train_batch')
-
-    def validate_batch(self):
-        self('before_valid_batch')
-        # forward
-        with torch.no_grad():
+            self.batch_x, self.batch_y = batch
+            # forward
             if self.get_pred == None:
                 self.pred = self.model(self.batch_x)
             else:
                 self.out = self.model(self.batch_x)
                 self.pred = self.get_pred(self.out)
-            self('before_valid_loss')
-            self.loss = self.loss_func(self.pred, self.batch_y)
-            self('after_valid_loss')
-        self('after_valid_batch')
+                self("before_train_loss")
+                self.loss = self.loss_func(self.pred, self.batch_y)
+
+        self("after_train_loss")
+        # backward
+        self.loss.backward()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+        self("after_train_batch")
+
+    # TODO: couple validate_batch with train_batch since they share the same code and should be changed together
+    def validate_batch(self, batch):
+        self("before_valid_batch")
+
+        if self.is_hf:
+            self.batch = batch
+            self.out = self.model(**self.batch)
+            self("before_valid_loss")
+            self.loss = self.out.loss
+            self("after_valid_loss")
+        else:
+            self.batch_x, self.batch_y = batch
+            # forward
+            with torch.no_grad():
+                if self.get_pred == None:
+                    self.pred = self.model(self.batch_x)
+                else:
+                    self.out = self.model(self.batch_x)
+                    self.pred = self.get_pred(self.out)
+                self("before_valid_loss")
+                self.loss = self.loss_func(self.pred, self.batch_y)
+                self("after_valid_loss")
+        self("after_valid_batch")
 
     def __call__(self, name):
         for cb in self.cbs:
@@ -158,10 +166,9 @@ class Learner:
         self.export = {}
         for cb_name, cb in self.cb_dict.items():
             # export everything except for reference to learner
-            self.export[cb_name] = {key: value for key,
-                                    value in cb.__dict__.items() if key != 'learner'}
+            self.export[cb_name] = {key: value for key, value in cb.__dict__.items() if key != "learner"}
         # save
-        with open(f"{self.config.path}/learner.pkl", 'wb') as learner_file:
+        with open(f"{self.config.path}/learner.pkl", "wb") as learner_file:
             dill.dump(self.export, learner_file)
             print("save successful!")
 
@@ -172,38 +179,38 @@ class MixedPrecisionLearner(Learner):
         self.epochs = epochs
         self.scaler = amp.GradScaler()
 
-        self('before_fit')
-        for epoch in range(1, epochs+1):
+        self("before_fit")
+        for epoch in range(1, epochs + 1):
             self.epoch = epoch
-            self('before_epoch')
+            self("before_epoch")
             self.model.train()
             for i, batch in enumerate(self.dls.train_dl):
                 self.batch_x, self.batch_y = batch
                 self.train_batch()
                 if i % self.valid_interval == 0:
                     self.validate_interval()
-            self('after_epoch')
-        self('after_fit')
+            self("after_epoch")
+        self("after_fit")
 
     def train_batch(self):
-        self('before_train_batch')
+        self("before_train_batch")
         # forward
         with amp.autocast():
             self.pred = self.get_pred(self.batch_x, self.model)
             self.loss = self.loss_func(self.pred, self.batch_y)
-        self('after_train_loss')
+        self("after_train_loss")
         # backward
         self.scaler.scale(self.loss).backward()
         self.scaler.step(self.optimizer)
         self.scaler.update()
         self.optimizer.zero_grad()
-        self('after_train_batch')
+        self("after_train_batch")
 
     def validate_batch(self):
-        self('before_valid_batch')
+        self("before_valid_batch")
         # forward
         with torch.no_grad():
             with amp.autocast():
                 self.pred = self.get_pred(self.batch_x, self.model)
                 self.loss = self.loss_func(self.pred, self.batch_y)
-        self('after_valid_loss')
+        self("after_valid_loss")
